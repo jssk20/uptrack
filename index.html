@@ -515,6 +515,30 @@
             }
         }
     </style>
+    <script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js';
+  import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js';
+
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyB0r-ecCpjmmTskle8pM-HC4JvBteHSsx4",
+    authDomain: "uptrack-productivity-tool.firebaseapp.com",
+    projectId: "uptrack-productivity-tool",
+    storageBucket: "uptrack-productivity-tool.firebasestorage.app",
+    messagingSenderId: "181612373741",
+    appId: "1:181612373741:web:56181e3b580d96b55c4ee4",
+    measurementId: "G-WBJGQVDNZL"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // Make Firebase functions globally available
+  window.db = db;
+  window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot };
+</script>
 </head>
 <body>
     <div class="container">
@@ -614,303 +638,416 @@
         </div>
     </div>
 
-    <script>
-        // Global variables
-        let tasks = [];
-        let internshipTasks = [];
-        let timerInterval;
-        let timeLeft = 25 * 60;
-        let isTimerRunning = false;
-        let pomodoroCount = 0;
-        let currentTaskFilter = 'all';
-        let currentInternshipFilter = 'all';
+   <script>
+    // Global variables
+    let tasks = [];
+    let internshipTasks = [];
+    let timerInterval;
+    let timeLeft = 25 * 60;
+    let isTimerRunning = false;
+    let pomodoroCount = 0;
+    let currentTaskFilter = 'all';
+    let currentInternshipFilter = 'all';
 
-        // Initialize app
-        document.addEventListener('DOMContentLoaded', function() {
-            loadSampleData();
+    // Firebase Collections
+    const TASKS_COLLECTION = 'tasks';
+    const INTERNSHIP_TASKS_COLLECTION = 'internshipTasks';
+    const USER_STATS_COLLECTION = 'userStats';
+
+    // Initialize app
+    document.addEventListener('DOMContentLoaded', function() {
+        loadDataFromFirebase();
+        updateTimer();
+        setupRealtimeListeners();
+    });
+
+    // Firebase Helper Functions
+    async function saveTaskToFirebase(task) {
+        try {
+            const docRef = await window.firestore.addDoc(window.firestore.collection(window.db, TASKS_COLLECTION), task);
+            return docRef.id;
+        } catch (error) {
+            console.error("Error adding task: ", error);
+        }
+    }
+
+    async function saveInternshipTaskToFirebase(task) {
+        try {
+            const docRef = await window.firestore.addDoc(window.firestore.collection(window.db, INTERNSHIP_TASKS_COLLECTION), task);
+            return docRef.id;
+        } catch (error) {
+            console.error("Error adding internship task: ", error);
+        }
+    }
+
+    async function updateTaskInFirebase(taskId, updates) {
+        try {
+            const taskRef = window.firestore.doc(window.db, TASKS_COLLECTION, taskId);
+            await window.firestore.updateDoc(taskRef, updates);
+        } catch (error) {
+            console.error("Error updating task: ", error);
+        }
+    }
+
+    async function updateInternshipTaskInFirebase(taskId, updates) {
+        try {
+            const taskRef = window.firestore.doc(window.db, INTERNSHIP_TASKS_COLLECTION, taskId);
+            await window.firestore.updateDoc(taskRef, updates);
+        } catch (error) {
+            console.error("Error updating internship task: ", error);
+        }
+    }
+
+    async function deleteTaskFromFirebase(taskId) {
+        try {
+            await window.firestore.deleteDoc(window.firestore.doc(window.db, TASKS_COLLECTION, taskId));
+        } catch (error) {
+            console.error("Error deleting task: ", error);
+        }
+    }
+
+    async function deleteInternshipTaskFromFirebase(taskId) {
+        try {
+            await window.firestore.deleteDoc(window.firestore.doc(window.db, INTERNSHIP_TASKS_COLLECTION, taskId));
+        } catch (error) {
+            console.error("Error deleting internship task: ", error);
+        }
+    }
+
+    async function loadDataFromFirebase() {
+        try {
+            // Load tasks
+            const tasksSnapshot = await window.firestore.getDocs(window.firestore.collection(window.db, TASKS_COLLECTION));
+            tasks = [];
+            tasksSnapshot.forEach((doc) => {
+                tasks.push({ ...doc.data(), firebaseId: doc.id });
+            });
+
+            // Load internship tasks
+            const internshipSnapshot = await window.firestore.getDocs(window.firestore.collection(window.db, INTERNSHIP_TASKS_COLLECTION));
+            internshipTasks = [];
+            internshipSnapshot.forEach((doc) => {
+                internshipTasks.push({ ...doc.data(), firebaseId: doc.id });
+            });
+
+            renderTasks();
+            renderInternshipTasks();
             updateStats();
-            updateTimer();
-        });
+        } catch (error) {
+            console.error("Error loading data: ", error);
+            // Load sample data if Firebase fails
+            loadSampleData();
+        }
+    }
 
-        // Task Management
-        function addTask() {
-            const input = document.getElementById('taskInput');
-            const priority = document.getElementById('prioritySelect').value;
-            
-            if (input.value.trim() === '') return;
-
-            const task = {
-                id: Date.now(),
-                text: input.value.trim(),
-                priority: priority,
-                completed: false,
-                createdAt: new Date().toLocaleDateString()
-            };
-
-            tasks.push(task);
-            input.value = '';
+    function setupRealtimeListeners() {
+        // Listen for real-time updates to tasks
+        window.firestore.onSnapshot(window.firestore.collection(window.db, TASKS_COLLECTION), (snapshot) => {
+            tasks = [];
+            snapshot.forEach((doc) => {
+                tasks.push({ ...doc.data(), firebaseId: doc.id });
+            });
             renderTasks();
             updateStats();
+        });
+
+        // Listen for real-time updates to internship tasks
+        window.firestore.onSnapshot(window.firestore.collection(window.db, INTERNSHIP_TASKS_COLLECTION), (snapshot) => {
+            internshipTasks = [];
+            snapshot.forEach((doc) => {
+                internshipTasks.push({ ...doc.data(), firebaseId: doc.id });
+            });
+            renderInternshipTasks();
+            updateStats();
+        });
+    }
+
+    // Updated Task Management Functions
+    async function addTask() {
+        const input = document.getElementById('taskInput');
+        const priority = document.getElementById('prioritySelect').value;
+        
+        if (input.value.trim() === '') return;
+
+        const task = {
+            id: Date.now(),
+            text: input.value.trim(),
+            priority: priority,
+            completed: false,
+            createdAt: new Date().toLocaleDateString(),
+            timestamp: new Date()
+        };
+
+        const firebaseId = await saveTaskToFirebase(task);
+        if (firebaseId) {
+            task.firebaseId = firebaseId;
+            input.value = '';
+        }
+    }
+
+    async function toggleTask(id) {
+        const task = tasks.find(t => t.id === id);
+        if (task && task.firebaseId) {
+            const updates = { completed: !task.completed };
+            await updateTaskInFirebase(task.firebaseId, updates);
+        }
+    }
+
+    async function deleteTask(id) {
+        const task = tasks.find(t => t.id === id);
+        if (task && task.firebaseId) {
+            await deleteTaskFromFirebase(task.firebaseId);
+        }
+    }
+
+    // Updated Internship Task Management Functions
+    async function addInternshipTask() {
+        const input = document.getElementById('internshipInput');
+        const status = document.getElementById('internshipStatus').value;
+        const date = document.getElementById('internshipDate').value;
+        
+        if (input.value.trim() === '') return;
+
+        const task = {
+            id: Date.now(),
+            text: input.value.trim(),
+            status: status,
+            dueDate: date || null,
+            completed: status === 'completed',
+            createdAt: new Date().toLocaleDateString(),
+            timestamp: new Date()
+        };
+
+        const firebaseId = await saveInternshipTaskToFirebase(task);
+        if (firebaseId) {
+            task.firebaseId = firebaseId;
+            input.value = '';
+            document.getElementById('internshipDate').value = '';
+        }
+    }
+
+    async function updateInternshipStatus(id, newStatus) {
+        const task = internshipTasks.find(t => t.id === id);
+        if (task && task.firebaseId) {
+            const updates = {
+                status: newStatus,
+                completed: newStatus === 'completed'
+            };
+            await updateInternshipTaskInFirebase(task.firebaseId, updates);
+        }
+    }
+
+    async function deleteInternshipTask(id) {
+        const task = internshipTasks.find(t => t.id === id);
+        if (task && task.firebaseId) {
+            await deleteInternshipTaskFromFirebase(task.firebaseId);
+        }
+    }
+
+    // Keep all other existing functions (renderTasks, renderInternshipTasks, timer functions, etc.)
+    // ... [Rest of your existing functions remain the same]
+
+    function renderTasks() {
+        const taskList = document.getElementById('taskList');
+        let filteredTasks = tasks;
+
+        if (currentTaskFilter === 'high') {
+            filteredTasks = tasks.filter(task => task.priority === 'high');
+        } else if (currentTaskFilter === 'pending') {
+            filteredTasks = tasks.filter(task => !task.completed);
+        } else if (currentTaskFilter === 'completed') {
+            filteredTasks = tasks.filter(task => task.completed);
         }
 
-        function renderTasks() {
-            const taskList = document.getElementById('taskList');
-            let filteredTasks = tasks;
+        taskList.innerHTML = filteredTasks.map(task => `
+            <div class="task-item ${task.completed ? 'completed' : ''}">
+                <div class="task-checkbox ${task.completed ? 'checked' : ''}" onclick="toggleTask(${task.id})"></div>
+                <div class="task-content">
+                    <div class="task-text">${task.text}</div>
+                    <div class="task-meta">
+                        <span class="status-badge ${task.priority}">${task.priority.toUpperCase()} PRIORITY</span>
+                        <span>Created: ${task.createdAt}</span>
+                    </div>
+                </div>
+                <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
+            </div>
+        `).join('');
+    }
 
-            if (currentTaskFilter === 'high') {
-                filteredTasks = tasks.filter(task => task.priority === 'high');
-            } else if (currentTaskFilter === 'pending') {
-                filteredTasks = tasks.filter(task => !task.completed);
-            } else if (currentTaskFilter === 'completed') {
-                filteredTasks = tasks.filter(task => task.completed);
+    function filterTasks(filter) {
+        currentTaskFilter = filter;
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            if (tab.textContent.toLowerCase().includes(filter) || filter === 'all') {
+                tab.classList.remove('active');
             }
+        });
+        event.target.classList.add('active');
+        renderTasks();
+    }
 
-            taskList.innerHTML = filteredTasks.map(task => `
-                <div class="task-item ${task.completed ? 'completed' : ''}">
-                    <div class="task-checkbox ${task.completed ? 'checked' : ''}" onclick="toggleTask(${task.id})"></div>
+    function renderInternshipTasks() {
+        const internshipList = document.getElementById('internshipList');
+        let filteredTasks = internshipTasks;
+
+        if (currentInternshipFilter !== 'all') {
+            filteredTasks = internshipTasks.filter(task => task.status === currentInternshipFilter);
+        }
+
+        internshipList.innerHTML = filteredTasks.map(task => {
+            const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+            const today = new Date();
+            const daysLeft = dueDate ? Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24)) : null;
+            
+            return `
+                <div class="internship-item ${task.completed ? 'completed' : ''}">
+                    <div class="status-indicator status-${task.status}"></div>
                     <div class="task-content">
                         <div class="task-text">${task.text}</div>
                         <div class="task-meta">
-                            <span class="status-badge ${task.priority}">${task.priority.toUpperCase()} PRIORITY</span>
+                            <span class="status-badge ${task.status}">${task.status.replace('-', ' ').toUpperCase()}</span>
                             <span>Created: ${task.createdAt}</span>
+                            ${dueDate ? `<span>Due: ${dueDate.toLocaleDateString()} ${daysLeft !== null ? (daysLeft >= 0 ? `(${daysLeft} days left)` : `(${Math.abs(daysLeft)} days overdue)`) : ''}</span>` : ''}
                         </div>
                     </div>
-                    <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
+                    <select onchange="updateInternshipStatus(${task.id}, this.value)" class="status-select" style="margin-right: 10px;">
+                        <option value="not-started" ${task.status === 'not-started' ? 'selected' : ''}>Not Started</option>
+                        <option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
+                        <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Completed</option>
+                        <option value="on-hold" ${task.status === 'on-hold' ? 'selected' : ''}>On Hold</option>
+                    </select>
+                    <button class="delete-btn" onclick="deleteInternshipTask(${task.id})">Delete</button>
                 </div>
-            `).join('');
-        }
+            `;
+        }).join('');
+    }
 
-        function toggleTask(id) {
-            const task = tasks.find(t => t.id === id);
-            if (task) {
-                task.completed = !task.completed;
-                renderTasks();
-                updateStats();
+    function filterInternships(filter) {
+        currentInternshipFilter = filter;
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            if (tab.onclick && tab.onclick.toString().includes('filterInternships')) {
+                tab.classList.remove('active');
             }
+        });
+        event.target.classList.add('active');
+        renderInternshipTasks();
+    }
+
+    // Editable Title
+    function toggleEditTitle() {
+        const titleInput = document.getElementById('internshipTitle');
+        const editBtn = document.querySelector('.edit-btn');
+        
+        if (titleInput.readOnly) {
+            titleInput.readOnly = false;
+            titleInput.focus();
+            titleInput.select();
+            editBtn.textContent = 'Save';
+        } else {
+            titleInput.readOnly = true;
+            editBtn.textContent = 'Edit Title';
         }
+    }
 
-        function deleteTask(id) {
-            tasks = tasks.filter(t => t.id !== id);
-            renderTasks();
-            updateStats();
-        }
-
-        function filterTasks(filter) {
-            currentTaskFilter = filter;
-            document.querySelectorAll('.filter-tab').forEach(tab => {
-                if (tab.textContent.toLowerCase().includes(filter) || filter === 'all') {
-                    tab.classList.remove('active');
-                }
-            });
-            event.target.classList.add('active');
-            renderTasks();
-        }
-
-        // Internship Task Management
-        function addInternshipTask() {
-            const input = document.getElementById('internshipInput');
-            const status = document.getElementById('internshipStatus').value;
-            const date = document.getElementById('internshipDate').value;
-            
-            if (input.value.trim() === '') return;
-
-            const task = {
-                id: Date.now(),
-                text: input.value.trim(),
-                status: status,
-                dueDate: date || null,
-                completed: status === 'completed',
-                createdAt: new Date().toLocaleDateString()
-            };
-
-            internshipTasks.push(task);
-            input.value = '';
-            document.getElementById('internshipDate').value = '';
-            renderInternshipTasks();
-            updateStats();
-        }
-
-        function renderInternshipTasks() {
-            const internshipList = document.getElementById('internshipList');
-            let filteredTasks = internshipTasks;
-
-            if (currentInternshipFilter !== 'all') {
-                filteredTasks = internshipTasks.filter(task => task.status === currentInternshipFilter);
-            }
-
-            internshipList.innerHTML = filteredTasks.map(task => {
-                const dueDate = task.dueDate ? new Date(task.dueDate) : null;
-                const today = new Date();
-                const daysLeft = dueDate ? Math.ceil((dueDate - today) / (1000 * 60 * 60 * 24)) : null;
+    // Pomodoro Timer Functions
+    function startTimer() {
+        if (!isTimerRunning) {
+            isTimerRunning = true;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                updateTimer();
+                updateProgress();
                 
-                return `
-                    <div class="internship-item ${task.completed ? 'completed' : ''}">
-                        <div class="status-indicator status-${task.status}"></div>
-                        <div class="task-content">
-                            <div class="task-text">${task.text}</div>
-                            <div class="task-meta">
-                                <span class="status-badge ${task.status}">${task.status.replace('-', ' ').toUpperCase()}</span>
-                                <span>Created: ${task.createdAt}</span>
-                                ${dueDate ? `<span>Due: ${dueDate.toLocaleDateString()} ${daysLeft !== null ? (daysLeft >= 0 ? `(${daysLeft} days left)` : `(${Math.abs(daysLeft)} days overdue)`) : ''}</span>` : ''}
-                            </div>
-                        </div>
-                        <select onchange="updateInternshipStatus(${task.id}, this.value)" class="status-select" style="margin-right: 10px;">
-                            <option value="not-started" ${task.status === 'not-started' ? 'selected' : ''}>Not Started</option>
-                            <option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
-                            <option value="completed" ${task.status === 'completed' ? 'selected' : ''}>Completed</option>
-                            <option value="on-hold" ${task.status === 'on-hold' ? 'selected' : ''}>On Hold</option>
-                        </select>
-                        <button class="delete-btn" onclick="deleteInternshipTask(${task.id})">Delete</button>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function updateInternshipStatus(id, newStatus) {
-            const task = internshipTasks.find(t => t.id === id);
-            if (task) {
-                task.status = newStatus;
-                task.completed = newStatus === 'completed';
-                renderInternshipTasks();
-                updateStats();
-            }
-        }
-
-        function deleteInternshipTask(id) {
-            internshipTasks = internshipTasks.filter(t => t.id !== id);
-            renderInternshipTasks();
-            updateStats();
-        }
-
-        function filterInternships(filter) {
-            currentInternshipFilter = filter;
-            document.querySelectorAll('.filter-tab').forEach(tab => {
-                if (tab.onclick && tab.onclick.toString().includes('filterInternships')) {
-                    tab.classList.remove('active');
+                if (timeLeft <= 0) {
+                    completePomodoro();
                 }
-            });
-            event.target.classList.add('active');
-            renderInternshipTasks();
+            }, 1000);
         }
+    }
 
-        // Editable Title
-        function toggleEditTitle() {
-            const titleInput = document.getElementById('internshipTitle');
-            const editBtn = document.querySelector('.edit-btn');
-            
-            if (titleInput.readOnly) {
-                titleInput.readOnly = false;
-                titleInput.focus();
-                titleInput.select();
-                editBtn.textContent = 'Save';
-            } else {
-                titleInput.readOnly = true;
-                editBtn.textContent = 'Edit Title';
+    function pauseTimer() {
+        isTimerRunning = false;
+        clearInterval(timerInterval);
+    }
+
+    function resetTimer() {
+        isTimerRunning = false;
+        clearInterval(timerInterval);
+        timeLeft = 25 * 60;
+        updateTimer();
+        updateProgress();
+    }
+
+    function updateTimer() {
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        document.getElementById('timerDisplay').textContent = 
+            `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    function updateProgress() {
+        const totalTime = 25 * 60;
+        const progress = ((totalTime - timeLeft) / totalTime) * 100;
+        document.getElementById('progressFill').style.width = `${progress}%`;
+    }
+
+    function completePomodoro() {
+        isTimerRunning = false;
+        clearInterval(timerInterval);
+        pomodoroCount++;
+        alert('🎉 Pomodoro completed! Take a 5-minute break.');
+        resetTimer();
+        updateStats();
+    }
+
+    // Statistics
+    function updateStats() {
+        const totalTasks = tasks.length + internshipTasks.length;
+        const completedTasks = tasks.filter(t => t.completed).length + internshipTasks.filter(t => t.completed).length;
+        const productivity = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+        document.getElementById('totalTasks').textContent = totalTasks;
+        document.getElementById('completedTasks').textContent = completedTasks;
+        document.getElementById('productivity').textContent = `${productivity}%`;
+        document.getElementById('pomodoroCount').textContent = pomodoroCount;
+    }
+
+    // Load sample data (only used if Firebase fails)
+    function loadSampleData() {
+        tasks.push(
+            { id: 1, text: "Complete project proposal", priority: "high", completed: false, createdAt: new Date().toLocaleDateString() },
+            { id: 2, text: "Review team feedback", priority: "medium", completed: true, createdAt: new Date().toLocaleDateString() },
+            { id: 3, text: "Update documentation", priority: "low", completed: false, createdAt: new Date().toLocaleDateString() }
+        );
+        
+        internshipTasks.push(
+            { id: 1, text: "Complete onboarding modules", status: "completed", dueDate: "2025-06-05", completed: true, createdAt: new Date().toLocaleDateString() },
+            { id: 2, text: "Attend team standup meetings", status: "in-progress", dueDate: "2025-06-10", completed: false, createdAt: new Date().toLocaleDateString() },
+            { id: 3, text: "Submit weekly progress report", status: "not-started", dueDate: "2025-06-08", completed: false, createdAt: new Date().toLocaleDateString() }
+        );
+        
+        renderTasks();
+        renderInternshipTasks();
+        updateStats();
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            if (document.activeElement.id === 'taskInput') {
+                addTask();
+            } else if (document.activeElement.id === 'internshipInput') {
+                addInternshipTask();
             }
         }
+    });
 
-        // Pomodoro Timer
-        function startTimer() {
-            if (!isTimerRunning) {
-                isTimerRunning = true;
-                timerInterval = setInterval(() => {
-                    timeLeft--;
-                    updateTimer();
-                    updateProgress();
-                    
-                    if (timeLeft <= 0) {
-                        completePomodoro();
-                    }
-                }, 1000);
-            }
+    // Handle title editing on Enter key
+    document.getElementById('internshipTitle').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            this.readOnly = true;
+            document.querySelector('.edit-btn').textContent = 'Edit Title';
         }
-
-        function pauseTimer() {
-            isTimerRunning = false;
-            clearInterval(timerInterval);
-        }
-
-        function resetTimer() {
-            isTimerRunning = false;
-            clearInterval(timerInterval);
-            timeLeft = 25 * 60;
-            updateTimer();
-            updateProgress();
-        }
-
-        function updateTimer() {
-            const minutes = Math.floor(timeLeft / 60);
-            const seconds = timeLeft % 60;
-            document.getElementById('timerDisplay').textContent = 
-                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        }
-
-        function updateProgress() {
-            const totalTime = 25 * 60;
-            const progress = ((totalTime - timeLeft) / totalTime) * 100;
-            document.getElementById('progressFill').style.width = `${progress}%`;
-        }
-
-        function completePomodoro() {
-            isTimerRunning = false;
-            clearInterval(timerInterval);
-            pomodoroCount++;
-            alert('🎉 Pomodoro completed! Take a 5-minute break.');
-            resetTimer();
-            updateStats();
-        }
-
-        // Statistics
-        function updateStats() {
-            const totalTasks = tasks.length + internshipTasks.length;
-            const completedTasks = tasks.filter(t => t.completed).length + internshipTasks.filter(t => t.completed).length;
-            const productivity = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
-
-            document.getElementById('totalTasks').textContent = totalTasks;
-            document.getElementById('completedTasks').textContent = completedTasks;
-            document.getElementById('productivity').textContent = `${productivity}%`;
-            document.getElementById('pomodoroCount').textContent = pomodoroCount;
-        }
-
-        // Load sample data
-        function loadSampleData() {
-            tasks.push(
-                { id: 1, text: "Complete project proposal", priority: "high", completed: false, createdAt: new Date().toLocaleDateString() },
-                { id: 2, text: "Review team feedback", priority: "medium", completed: true, createdAt: new Date().toLocaleDateString() },
-                { id: 3, text: "Update documentation", priority: "low", completed: false, createdAt: new Date().toLocaleDateString() }
-            );
-            
-            internshipTasks.push(
-                { id: 1, text: "Complete onboarding modules", status: "completed", dueDate: "2025-06-05", completed: true, createdAt: new Date().toLocaleDateString() },
-                { id: 2, text: "Attend team standup meetings", status: "in-progress", dueDate: "2025-06-10", completed: false, createdAt: new Date().toLocaleDateString() },
-                { id: 3, text: "Submit weekly progress report", status: "not-started", dueDate: "2025-06-08", completed: false, createdAt: new Date().toLocaleDateString() },
-                { id: 4, text: "Work on machine learning model", status: "in-progress", dueDate: "2025-06-15", completed: false, createdAt: new Date().toLocaleDateString() },
-                { id: 5, text: "Prepare presentation for mentor", status: "on-hold", dueDate: "2025-06-12", completed: false, createdAt: new Date().toLocaleDateString() }
-            );
-            
-            renderTasks();
-            renderInternshipTasks();
-            updateStats();
-        }
-
-        // Keyboard shortcuts
-        document.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                if (document.activeElement.id === 'taskInput') {
-                    addTask();
-                } else if (document.activeElement.id === 'internshipInput') {
-                    addInternshipTask();
-                }
-            }
-        });
-
-        // Handle title editing on Enter key
-        document.getElementById('internshipTitle').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                this.readOnly = true;
-                document.querySelector('.edit-btn').textContent = 'Edit Title';
-            }
-        });
-    </script>
+    });
+</script>
 </body>
 </html>
